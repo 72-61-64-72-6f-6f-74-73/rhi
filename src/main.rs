@@ -1,47 +1,13 @@
 use anyhow::Result;
 use clap::Parser;
-use nostr::{Filter, Keys, Kind, Timestamp, event::Event};
-use nostr_sdk::{Client, RelayPoolNotification};
-use rhi::{KIND_JOB_REQUEST, config::Settings, keys::KeyProfile};
+use nostr::event::Event;
+use nostr_sdk::Client;
+use rhi::{config::Settings, events, keys::KeyProfile};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing::{error, info};
 
 fn init_tracing() {
     tracing_subscriber::fmt::init();
-}
-
-async fn subscribe(keys: Keys, relays: Vec<String>) -> Result<()> {
-    let client = Client::new(keys);
-    for relay in relays.iter() {
-        client.add_relay(relay).await?;
-    }
-    client.connect().await;
-
-    let filter = Filter::new()
-        .kind(Kind::Custom(KIND_JOB_REQUEST))
-        .since(Timestamp::now());
-
-    client.subscribe(filter, None).await?;
-
-    info!("Subscription started for kind {}", {
-        KIND_JOB_REQUEST.to_string()
-    });
-
-    let mut notifications = client.notifications();
-
-    while let Ok(notification) = notifications.recv().await {
-        match notification {
-            RelayPoolNotification::Event { event, .. } => {
-                info!("Event received {:?}", { event.clone() });
-            }
-            RelayPoolNotification::Message { .. } => {}
-            RelayPoolNotification::Shutdown => {}
-        }
-    }
-
-    client.disconnect().await;
-
-    Ok(())
 }
 
 #[derive(Parser)]
@@ -124,8 +90,10 @@ async fn main() -> Result<()> {
 
     tokio::spawn(async move {
         loop {
-            if let Err(e) = subscribe(keys_sub.clone(), relays_sub.clone()).await {
-                error!("Error on subscription: {e}");
+            if let Err(e) =
+                events::job_request::subscriber(keys_sub.clone(), relays_sub.clone()).await
+            {
+                error!("Error on job request subscription: {e}");
             }
         }
     });
