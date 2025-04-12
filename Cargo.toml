@@ -9,6 +9,7 @@ description = "rhizome is a Nostr data vending machine (NIP-90)"
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4", features = ["derive"] }
+config = "0.15"
 nostr = "0.40.0"
 nostr-sdk = "0.40.0"
 serde = "1.0"

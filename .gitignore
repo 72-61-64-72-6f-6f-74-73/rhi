@@ -12,3 +12,4 @@ notes*.txt
 .DS_Store
 *.pem
 *keys*.json
+*rhi*.toml

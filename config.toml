@@ -1,0 +1,29 @@
+# rhizome Nostr data vending machine configuration
+
+[metadata]
+# The name shown on the profile
+name = "rhi"
+
+# A full display name that can include emojis or symbols
+# display_name = ""
+
+# A profile biography or description 
+# about = ""
+
+# URL of profile picture
+# picture = ""
+
+# URL of banner image
+# banner = ""
+
+# URL of website
+# banner = ""
+
+# Profile mapping to DNS-based internet identifier
+# nip05 = ""
+
+# Lightning address LNURL format
+# lud06 = ""
+
+# Lightning address internet identifiers format
+# lud16 = ""

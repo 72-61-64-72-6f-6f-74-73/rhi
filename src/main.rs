@@ -1,15 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
-use nostr::{Filter, Keys, Kind, Timestamp, event::Event, nips::nip01::Metadata};
+use nostr::{Filter, Keys, Kind, Timestamp, event::Event};
 use nostr_sdk::{Client, RelayPoolNotification};
-use rhi::{KIND_JOB_REQUEST, keys::KeyProfile};
+use rhi::{KIND_JOB_REQUEST, config::Settings, keys::KeyProfile};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing::{error, info};
-
-struct ConfigMetadata {
-    name: String,
-    nip_05: Option<String>,
-}
 
 fn init_tracing() {
     tracing_subscriber::fmt::init();
@@ -56,15 +51,15 @@ async fn subscribe(keys: Keys, relays: Vec<String>) -> Result<()> {
     version = env!("CARGO_PKG_VERSION")
 )]
 pub struct Args {
-    #[arg(long, help = "Adds the keys profiles file path.", required = true)]
+    #[arg(long, help = "Adds the keys profiles file path", required = true)]
     pub keys: String,
 
-    #[arg(long, help = "Adds nostr relays to the subscription.", required = true)]
+    #[arg(long, help = "Adds nostr relays to the subscription", required = true)]
     pub relays: Vec<String>,
 
     #[arg(
         long,
-        help = "(Optional) Sets flag to generate keys if none are found.",
+        help = "(Optional) Sets flag to generate keys if none are found",
         required = false
     )]
     pub generate_keys: bool,
@@ -78,10 +73,10 @@ pub struct Args {
 
     #[arg(
         long,
-        help = "(Optional) Adds the domain name (NIP-05) to metadata",
+        help = "(Optional) Adds the config file path. Defaults to 'config.toml'",
         required = false
     )]
-    pub nip05_domain: Option<String>,
+    pub config: Option<String>,
 }
 
 #[tokio::main]
@@ -89,6 +84,8 @@ async fn main() -> Result<()> {
     init_tracing();
 
     let args = Args::parse();
+    let config = Settings::load(&args.config)?;
+
     let relays = args.relays.clone();
 
     info!("Starting");
@@ -97,21 +94,7 @@ async fn main() -> Result<()> {
 
     let keys = key_profile.keys()?;
 
-    let config = ConfigMetadata {
-        name: "rhi".to_string(),
-        nip_05: args.nip05_domain,
-    };
-
-    let metadata = Metadata {
-        name: Some(config.name.clone()),
-        display_name: None,
-        picture: None,
-        nip05: config
-            .nip_05
-            .as_ref()
-            .map(|domain| format!("{}@{}", config.name, domain)),
-        ..Default::default()
-    };
+    let metadata = config.metadata.clone();
 
     let mut events: Vec<Event> = vec![];
 
@@ -131,9 +114,7 @@ async fn main() -> Result<()> {
         client.connect().await;
         for event in events {
             client.send_event(&event).await?;
-            info!("Sent kind {} event for key profile", {
-                event.clone().kind
-            })
+            info!("Sent kind {} event for key profile", { event.clone().kind })
         }
         client.disconnect().await;
     }

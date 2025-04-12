@@ -1,3 +1,4 @@
+pub mod config;
 pub mod keys;
 
 pub const KIND_JOB_REQUEST: u16 = 5300;
