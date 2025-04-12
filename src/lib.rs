@@ -1,6 +1,7 @@
 pub mod config;
 pub mod events;
 pub mod keys;
+pub mod utils;
 
 pub const KIND_JOB_REQUEST: u16 = 5300;
 pub const KIND_JOB_RESPONSE: u16 = 6300;
