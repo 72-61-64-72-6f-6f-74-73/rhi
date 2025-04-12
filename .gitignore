@@ -1,0 +1,13 @@
+/target
+justfile
+notes*.txt
+.tmp*
+.vscode
+
+.env
+.env.*
+!.env.example
+!.env.test
+
+.DS_Store
+*.pem

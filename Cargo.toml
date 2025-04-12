@@ -1,0 +1,15 @@
+[package]
+name = "rhi"
+version = "0.1.0"
+authors = ["triesap npub1tr33s4tj2le2kk9yzhfphdtss26gyn8kv7savnnjhj794nqp333q8e7grr"]
+license = "AGPLv3"
+edition = "2024"
+description = "rhizome is a Nostr data vending machine (NIP-90)"
+
+[dependencies]
+anyhow = "1.0"
+serde = "1.0"
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
