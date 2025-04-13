@@ -7,6 +7,9 @@ use nostr_sdk::RelayPoolNotification;
 use tracing::{info, warn};
 
 use crate::KIND_JOB_REQUEST;
+use crate::handlers::job_request_order::handle_job_request_order;
+use crate::handlers::job_request_preview::handle_job_request_preview;
+use crate::handlers::job_request_quote::handle_job_request_quote;
 use crate::utils::nostr::{
     nostr_event_job_request_feedback, nostr_filter_kind, nostr_filter_new_events,
     nostr_tag_at_value, nostr_tag_first_value, nostr_tag_relays_parse, nostr_tag_slice,
@@ -117,7 +120,7 @@ pub async fn subscriber(keys: Keys, relays: Vec<String>) -> Result<()> {
                     if let Err(err) =
                         handle_event(event.clone(), keys.clone(), client.clone()).await
                     {
-                        let _ = handle_error(err, event, keys, client).await;
+                        let _ = handle_error(err, event, keys, client, None).await;
                     }
                 });
             }
@@ -134,8 +137,10 @@ async fn handle_error(
     event: Event,
     keys: Keys,
     client: Client,
+    job_req: Option<JobRequest>,
 ) -> Result<()> {
-    warn!("job_request handle_error {}", error);
+    warn!("job_request handle_error error {}", error);
+    warn!("job_request handle_error event {:?}", { event.clone() });
 
     let builder = nostr_event_job_request_feedback(&event, error, "error", None)?;
     let event_id = client.send_event_builder(builder).await?;
@@ -147,11 +152,46 @@ async fn handle_error(
 }
 
 async fn handle_event(event: Event, keys: Keys, client: Client) -> Result<(), JobRequestError> {
-    let job_request = parse_event(&event, &keys)?;
+    let job_req = parse_event(&event, &keys)?;
+    for input in &job_req.inputs {
+        let marker = input
+            .marker
+            .as_ref()
+            .ok_or_else(|| JobRequestError::InvalidInputMarker(job_req.id.to_string()))?;
 
-    info!("job_request handle_event job_request {:?}", {
-        job_request.clone()
-    });
+        match marker {
+            JobRequestInputMarker::Order => {
+                process_job_request(
+                    handle_job_request_order,
+                    event.clone(),
+                    job_req.clone(),
+                    keys.clone(),
+                    client.clone(),
+                )
+                .await;
+            }
+            JobRequestInputMarker::Quote => {
+                process_job_request(
+                    handle_job_request_quote,
+                    event.clone(),
+                    job_req.clone(),
+                    keys.clone(),
+                    client.clone(),
+                )
+                .await;
+            }
+            JobRequestInputMarker::Preview => {
+                process_job_request(
+                    handle_job_request_preview,
+                    event.clone(),
+                    job_req.clone(),
+                    keys.clone(),
+                    client.clone(),
+                )
+                .await;
+            }
+        }
+    }
 
     Ok(())
 }
@@ -237,4 +277,31 @@ fn parse_event(event: &Event, keys: &Keys) -> Result<JobRequest, JobRequestError
         params,
         hashtags,
     })
+}
+
+async fn process_job_request<F, Fut>(
+    handler: F,
+    event: Event,
+    job_req: JobRequest,
+    keys: Keys,
+    client: Client,
+) where
+    F: FnOnce(Event, JobRequest, Keys, Client) -> Fut,
+    Fut: std::future::Future<Output = Result<(), JobRequestError>>,
+{
+    let error_event = event.clone();
+    let error_job_req = job_req.clone();
+    let error_keys = keys.clone();
+    let error_client = client.clone();
+
+    if let Err(err) = handler(event, job_req.clone(), keys.clone(), client.clone()).await {
+        let _ = handle_error(
+            err,
+            error_event,
+            error_keys,
+            error_client,
+            Some(error_job_req),
+        )
+        .await;
+    }
 }
