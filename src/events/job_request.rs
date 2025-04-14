@@ -7,25 +7,35 @@ use nostr_sdk::RelayPoolNotification;
 use tracing::{info, warn};
 
 use crate::KIND_JOB_REQUEST;
-use crate::handlers::job_request_order::handle_job_request_order;
+use crate::handlers::job_request_order::{JobRequestOrderError, handle_job_request_order};
 use crate::handlers::job_request_preview::handle_job_request_preview;
 use crate::handlers::job_request_quote::handle_job_request_quote;
 use crate::utils::nostr::{
-    nostr_event_job_request_feedback, nostr_filter_kind, nostr_filter_new_events,
-    nostr_tag_at_value, nostr_tag_first_value, nostr_tag_relays_parse, nostr_tag_slice,
-    nostr_tags_resolve,
+    NostrTagsResolveError, nostr_event_job_request_feedback, nostr_filter_kind,
+    nostr_filter_new_events, nostr_tag_at_value, nostr_tag_first_value, nostr_tag_relays_parse,
+    nostr_tag_slice, nostr_tags_resolve,
 };
+use crate::utils::unit::MassUnitError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum JobRequestError {
+    #[error("Order request error: {0}")]
+    JobRequestOrder(#[from] JobRequestOrderError),
+
+    #[error("Mass unit error: {0}")]
+    MassUnit(#[from] MassUnitError),
+
+    #[error("Mass unit error: {0}")]
+    NostrTagsResolve(#[from] NostrTagsResolveError),
+
     #[error("Invalid job request input type: {0}")]
     InvalidInputType(String),
 
     #[error("Invalid job request input marker: {0}")]
     InvalidInputMarker(String),
 
-    #[error("Failure to resolve event tags: {0}")]
-    TagResolution(#[from] anyhow::Error),
+    #[error("Deserialization error: {0}")]
+    Serde(#[from] serde_json::Error),
 
     #[error("Failure to process request")]
     Failure,
@@ -135,9 +145,9 @@ pub async fn subscriber(keys: Keys, relays: Vec<String>) -> Result<()> {
 async fn handle_error(
     error: JobRequestError,
     event: Event,
-    keys: Keys,
+    _keys: Keys,
     client: Client,
-    job_req: Option<JobRequest>,
+    _job_req: Option<JobRequest>,
 ) -> Result<()> {
     warn!("job_request handle_error error {}", error);
     warn!("job_request handle_error event {:?}", { event.clone() });
@@ -153,8 +163,8 @@ async fn handle_error(
 
 async fn handle_event(event: Event, keys: Keys, client: Client) -> Result<(), JobRequestError> {
     let job_req = parse_event(&event, &keys)?;
-    for input in &job_req.inputs {
-        let marker = input
+    for job_req_input in &job_req.inputs {
+        let marker = job_req_input
             .marker
             .as_ref()
             .ok_or_else(|| JobRequestError::InvalidInputMarker(job_req.id.to_string()))?;
@@ -164,9 +174,10 @@ async fn handle_event(event: Event, keys: Keys, client: Client) -> Result<(), Jo
                 process_job_request(
                     handle_job_request_order,
                     event.clone(),
-                    job_req.clone(),
                     keys.clone(),
                     client.clone(),
+                    job_req.clone(),
+                    job_req_input.clone(),
                 )
                 .await;
             }
@@ -174,9 +185,10 @@ async fn handle_event(event: Event, keys: Keys, client: Client) -> Result<(), Jo
                 process_job_request(
                     handle_job_request_quote,
                     event.clone(),
-                    job_req.clone(),
                     keys.clone(),
                     client.clone(),
+                    job_req.clone(),
+                    job_req_input.clone(),
                 )
                 .await;
             }
@@ -184,9 +196,10 @@ async fn handle_event(event: Event, keys: Keys, client: Client) -> Result<(), Jo
                 process_job_request(
                     handle_job_request_preview,
                     event.clone(),
-                    job_req.clone(),
                     keys.clone(),
                     client.clone(),
+                    job_req.clone(),
+                    job_req_input.clone(),
                 )
                 .await;
             }
@@ -197,7 +210,7 @@ async fn handle_event(event: Event, keys: Keys, client: Client) -> Result<(), Jo
 }
 
 fn parse_event(event: &Event, keys: &Keys) -> Result<JobRequest, JobRequestError> {
-    let tags = nostr_tags_resolve(event, keys).map_err(JobRequestError::TagResolution)?;
+    let tags = nostr_tags_resolve(event, keys)?;
     let mut inputs = vec![];
     let mut output = None;
     let mut bid_msat = None;
@@ -282,11 +295,12 @@ fn parse_event(event: &Event, keys: &Keys) -> Result<JobRequest, JobRequestError
 async fn process_job_request<F, Fut>(
     handler: F,
     event: Event,
-    job_req: JobRequest,
     keys: Keys,
     client: Client,
+    job_req: JobRequest,
+    job_req_input: JobRequestInput,
 ) where
-    F: FnOnce(Event, JobRequest, Keys, Client) -> Fut,
+    F: FnOnce(Event, Keys, Client, JobRequest, JobRequestInput) -> Fut,
     Fut: std::future::Future<Output = Result<(), JobRequestError>>,
 {
     let error_event = event.clone();
@@ -294,7 +308,15 @@ async fn process_job_request<F, Fut>(
     let error_keys = keys.clone();
     let error_client = client.clone();
 
-    if let Err(err) = handler(event, job_req.clone(), keys.clone(), client.clone()).await {
+    if let Err(err) = handler(
+        event,
+        keys.clone(),
+        client.clone(),
+        job_req.clone(),
+        job_req_input.clone(),
+    )
+    .await
+    {
         let _ = handle_error(
             err,
             error_event,

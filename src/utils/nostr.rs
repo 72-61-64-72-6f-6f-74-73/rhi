@@ -1,6 +1,8 @@
+use std::borrow::Cow;
+
 use anyhow::Result;
 use nostr::{
-    event::{Event, EventBuilder, Kind, Tag, TagKind, TagStandard},
+    event::{Event, EventBuilder, EventId, Kind, Tag, TagKind, TagStandard},
     filter::Filter,
     key::{Keys, PublicKey},
     nips::{
@@ -9,6 +11,8 @@ use nostr::{
     },
     types::{RelayUrl, Timestamp},
 };
+use nostr_sdk::Client;
+use nostr_sdk::RelayPoolNotification;
 use thiserror::Error;
 
 use crate::events::job_request::JobRequestError;
@@ -48,6 +52,57 @@ pub fn nostr_tag_relays_parse(tag: &Tag) -> Option<&Vec<RelayUrl>> {
     }
 }
 
+pub fn nostr_tags_match<'a>(tag: &'a Tag) -> Option<(&'a str, &'a [String])> {
+    if let TagKind::Custom(Cow::Borrowed(key)) = tag.kind() {
+        Some((key, &tag.as_slice()[1..]))
+    } else {
+        None
+    }
+}
+
+pub fn nostr_tag_match_l(tag: &Tag) -> Option<(&str, f64)> {
+    let values = tag.as_slice();
+
+    if values.len() >= 3 && values[0].eq_ignore_ascii_case("l") {
+        if let Ok(value) = values[1].parse::<f64>() {
+            return Some((values[2].as_str(), value));
+        }
+    }
+
+    None
+}
+
+pub fn nostr_tag_match_location(tag: &Tag) -> Option<(&str, &str, &str)> {
+    let values = tag.as_slice();
+
+    if values.len() >= 4 && values[0] == "location" {
+        Some((values[1].as_str(), values[2].as_str(), values[3].as_str()))
+    } else {
+        None
+    }
+}
+
+pub fn nostr_tag_match_geohash(tag: &Tag) -> Option<String> {
+    match tag.as_standardized()? {
+        TagStandard::Geohash(geohash) => Some(geohash.clone()),
+        _ => None,
+    }
+}
+
+pub fn nostr_tag_match_title(tag: &Tag) -> Option<String> {
+    match tag.as_standardized()? {
+        TagStandard::Title(title) => Some(title.clone()),
+        _ => None,
+    }
+}
+
+pub fn nostr_tag_match_summary(tag: &Tag) -> Option<String> {
+    match tag.as_standardized()? {
+        TagStandard::Summary(summary) => Some(summary.clone()),
+        _ => None,
+    }
+}
+
 pub fn nostr_event_job_request_feedback(
     event: &Event,
     error: JobRequestError,
@@ -60,6 +115,25 @@ pub fn nostr_event_job_request_feedback(
     let feedback_data = JobFeedbackData::new(&event, status).extra_info(error.to_string());
     let builder = EventBuilder::job_feedback(feedback_data).tags(tags.unwrap_or_default());
     Ok(builder)
+}
+
+pub async fn nostr_fetch_event_by_id(client: Client, id: &str) -> Result<Option<Event>> {
+    let event_id = EventId::from_hex(id)?;
+    let filter = Filter::new().id(event_id);
+
+    client.connect().await;
+    client.subscribe(filter, None).await?;
+
+    let mut notifications = client.notifications();
+    while let Ok(n) = notifications.recv().await {
+        if let RelayPoolNotification::Event { event, .. } = n {
+            if event.id == event_id {
+                return Ok(Some(*event));
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 #[derive(Debug, Error)]
@@ -77,7 +151,7 @@ pub enum NostrTagsResolveError {
     ParseError(#[from] serde_json::Error),
 }
 
-pub fn nostr_tags_resolve(event: &Event, keys: &Keys) -> Result<Vec<Tag>> {
+pub fn nostr_tags_resolve(event: &Event, keys: &Keys) -> Result<Vec<Tag>, NostrTagsResolveError> {
     if event.tags.iter().any(|t| t.kind() == TagKind::Encrypted) {
         let recipient = event
             .tags
