@@ -11,21 +11,21 @@ use crate::handlers::job_request_order::{JobRequestOrderError, handle_job_reques
 use crate::handlers::job_request_preview::handle_job_request_preview;
 use crate::handlers::job_request_quote::handle_job_request_quote;
 use crate::utils::nostr::{
-    NostrTagsResolveError, nostr_event_job_request_feedback, nostr_filter_kind,
-    nostr_filter_new_events, nostr_tag_at_value, nostr_tag_first_value, nostr_tag_relays_parse,
-    nostr_tag_slice, nostr_tags_resolve,
+    NostrTagsResolveError, nostr_event_job_feedback, nostr_filter_kind, nostr_filter_new_events,
+    nostr_tag_at_value, nostr_tag_first_value, nostr_tag_relays_parse, nostr_tag_slice,
+    nostr_tags_resolve,
 };
 use crate::utils::unit::MassUnitError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum JobRequestError {
-    #[error("Order request error: {0}")]
+    #[error("Order: {0}")]
     JobRequestOrder(#[from] JobRequestOrderError),
 
-    #[error("Mass unit error: {0}")]
+    #[error("{0}")]
     MassUnit(#[from] MassUnitError),
 
-    #[error("Mass unit error: {0}")]
+    #[error("{0}")]
     NostrTagsResolve(#[from] NostrTagsResolveError),
 
     #[error("Invalid job request input type: {0}")]
@@ -152,7 +152,7 @@ async fn handle_error(
     warn!("job_request handle_error error {}", error);
     warn!("job_request handle_error event {:?}", { event.clone() });
 
-    let builder = nostr_event_job_request_feedback(&event, error, "error", None)?;
+    let builder = nostr_event_job_feedback(&event, error, "error", None)?;
     let event_id = client.send_event_builder(builder).await?;
 
     warn!("job_request handle_error sent feedback {:?}", {

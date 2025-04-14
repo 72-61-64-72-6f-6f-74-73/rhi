@@ -103,16 +103,35 @@ pub fn nostr_tag_match_summary(tag: &Tag) -> Option<String> {
     }
 }
 
-pub fn nostr_event_job_request_feedback(
-    event: &Event,
+#[derive(Debug, thiserror::Error)]
+pub enum NostrEventError {
+    #[error("Failed to build job result event: {0}")]
+    BuildError(#[from] nostr::event::builder::Error),
+}
+
+pub fn nostr_event_job_result(
+    job_request: &Event,
+    payload: impl Into<String>,
+    millisats: u64,
+    bolt11: Option<String>,
+    tags: Option<Vec<Tag>>,
+) -> Result<EventBuilder, NostrEventError> {
+    let builder = EventBuilder::job_result(job_request.clone(), payload, millisats, bolt11)?
+        .tags(tags.unwrap_or_default());
+    Ok(builder)
+}
+
+pub fn nostr_event_job_feedback(
+    job_request: &Event,
     error: JobRequestError,
     status: &str,
     tags: Option<Vec<Tag>>,
-) -> anyhow::Result<EventBuilder> {
+) -> Result<EventBuilder, NostrEventError> {
     let status = status
         .parse::<DataVendingMachineStatus>()
         .unwrap_or(DataVendingMachineStatus::Error);
-    let feedback_data = JobFeedbackData::new(&event, status).extra_info(error.to_string());
+    let feedback_data =
+        JobFeedbackData::new(&job_request.clone(), status).extra_info(error.to_string());
     let builder = EventBuilder::job_feedback(feedback_data).tags(tags.unwrap_or_default());
     Ok(builder)
 }

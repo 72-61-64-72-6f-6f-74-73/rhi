@@ -8,7 +8,7 @@ use tracing::info;
 use crate::{
     events::job_request::{JobRequest, JobRequestError, JobRequestInput},
     models::event_classified::EventClassified,
-    utils::nostr::nostr_fetch_event_by_id,
+    utils::nostr::{NostrEventError, nostr_event_job_result, nostr_fetch_event_by_id},
 };
 
 #[derive(Debug, Error)]
@@ -21,6 +21,15 @@ pub enum JobRequestOrderError {
 
     #[error("Reference event not found {0}")]
     ReferenceEventMissing(String),
+
+    #[error("Reference event does not satisfy requested {0}")]
+    ReferenceEventMissingRequested(String),
+
+    #[error("Failure building the job response")]
+    ResponseEventBuildFailure(#[from] NostrEventError),
+
+    #[error("Failure sending the job response")]
+    ResponseEventSendFailure(#[from] nostr_sdk::client::Error),
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,7 +67,7 @@ pub struct JobRequestOrderData {
 }
 
 pub async fn handle_job_request_order(
-    _event: Event,
+    event_job_request: Event,
     _keys: Keys,
     client: Client,
     _job_req: JobRequest,
@@ -79,8 +88,6 @@ pub async fn handle_job_request_order(
                 order_data.event.id.clone(),
             ))?;
 
-    info!("handle_job_request_order ref_event: {:?}", ref_event);
-
     let ref_classified = EventClassified::from_event(ref_event)
         .map_err(|_| JobRequestOrderError::ReferenceEventParse(order_data.event.id.clone()))?;
 
@@ -89,5 +96,28 @@ pub async fn handle_job_request_order(
         ref_classified
     );
 
+    if ref_classified.prices.is_empty() {
+        return Err(JobRequestError::JobRequestOrder(
+            JobRequestOrderError::ReferenceEventMissingRequested("price".to_string()),
+        ));
+    }
+
+    if ref_classified.quantities.is_empty() {
+        return Err(JobRequestError::JobRequestOrder(
+            JobRequestOrderError::ReferenceEventMissingRequested("quantity".to_string()),
+        ));
+    }
+
+    let payload = "your order was received!";
+    let event_result = nostr_event_job_result(&event_job_request.clone(), payload, 0, None, None)
+        .map_err(JobRequestOrderError::from)?;
+    let event_id = client
+        .send_event_builder(event_result)
+        .await
+        .map_err(JobRequestOrderError::from)?;
+
+    info!("handle_job_request_order sent result {:?}", {
+        event_id.clone()
+    });
     Ok(())
 }
