@@ -6,10 +6,10 @@ use nostr::filter::{Alphabet, SingleLetterTag};
 use nostr::{event::Kind, key::Keys};
 use nostr_sdk::Client;
 use nostr_sdk::RelayPoolNotification;
+use radroots_common::KIND_JOB_REQUEST;
 use tokio::time::sleep;
 use tracing::{info, warn};
 
-use crate::KIND_JOB_REQUEST;
 use crate::handlers::job_request_order::{JobRequestOrderError, handle_job_request_order};
 use crate::handlers::job_request_preview::handle_job_request_preview;
 use crate::handlers::job_request_quote::handle_job_request_quote;

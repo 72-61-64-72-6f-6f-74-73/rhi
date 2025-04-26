@@ -1,0 +1,4 @@
+[submodule "crates/radroots-common"]
+	path = crates/radroots-common
+	url = git@github.com:72-61-64-72-6f-6f-74-73/crates-radroots-common.git
+	branch = master

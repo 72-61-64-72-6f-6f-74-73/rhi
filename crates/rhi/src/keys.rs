@@ -4,6 +4,7 @@ use nostr::{
     event::{EventBuilder, Kind, Tag, TagKind},
     nips::nip01::Metadata,
 };
+use radroots_common::{KIND_APPLICATION_HANDLER, KIND_JOB_REQUEST};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
@@ -18,8 +19,6 @@ use uuid::Uuid;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-
-use crate::{KIND_APPLICATION_HANDLER, KIND_JOB_REQUEST};
 
 #[derive(Error, Debug)]
 pub enum KeyProfileError {

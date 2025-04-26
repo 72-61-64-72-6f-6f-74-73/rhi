@@ -1,0 +1,25 @@
+[package]
+name = "rhi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors = ["triesap npub1tr33s4tj2le2kk9yzhfphdtss26gyn8kv7savnnjhj794nqp333q8e7grr"]
+description = "rhizome is a Nostr data vending machine (NIP-90)"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4", features = ["derive"] }
+config = "0.15"
+futures = "0.3"
+nostr = { version = "0.40.0", features = ["nip04"] }
+nostr-sdk = "0.40.0"
+serde = "1.0"
+serde_json = "1.0"
+tempfile = "3.19.1"
+thiserror = "1.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+typeshare = "1.0.0"
+uuid = { version = "1.16.0", features = ["v4"] }
+radroots-common = { path = "../radroots-common" }

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
+use typeshare::typeshare;
 
+#[typeshare]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OrderClassifiedResult {
     pub quantity: OrderClassifiedQuantity,
@@ -9,6 +11,7 @@ pub struct OrderClassifiedResult {
     pub total: OrderClassifiedTotal,
 }
 
+#[typeshare]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OrderClassifiedQuantity {
     pub amount: f64,
@@ -16,6 +19,7 @@ pub struct OrderClassifiedQuantity {
     pub label: String,
 }
 
+#[typeshare]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OrderClassifiedPrice {
     pub amount: f64,
@@ -24,6 +28,7 @@ pub struct OrderClassifiedPrice {
     pub quantity_unit: String,
 }
 
+#[typeshare]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OrderClassifiedDiscount {
     pub discount_type: String,
@@ -36,6 +41,7 @@ pub struct OrderClassifiedDiscount {
     pub currency: String,
 }
 
+#[typeshare]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OrderClassifiedTotal {
     pub price_amount: f64,
