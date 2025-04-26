@@ -1,5 +1,6 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, time::Duration};
 
+use crate::events::job_request::JobRequestError;
 use anyhow::Result;
 use nostr::{
     event::{Event, EventBuilder, EventId, Kind, Tag, TagKind, TagStandard},
@@ -12,10 +13,38 @@ use nostr::{
     types::{RelayUrl, Timestamp},
 };
 use nostr_sdk::Client;
-use nostr_sdk::RelayPoolNotification;
+use nostr_sdk::prelude::*;
 use thiserror::Error;
 
-use crate::events::job_request::JobRequestError;
+#[derive(Debug, Error)]
+pub enum NostrUtilsError {
+    #[error("Client error: {0}")]
+    ClientError(#[from] nostr_sdk::client::Error),
+
+    #[error("Event error: {0}")]
+    EventError(#[from] nostr::event::Error),
+
+    #[error("Event not found: {0}")]
+    EventNotFound(String),
+
+    #[error("Event builder failure: {0}")]
+    EventBuildError(#[from] nostr::event::builder::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum NostrTagsResolveError {
+    #[error("Missing public key tag in encrypted event: {0:?}")]
+    MissingPTag(nostr::Event),
+
+    #[error("Encrypted event recipient mismatch")]
+    NotRecipient,
+
+    #[error("Decryption error: {0}")]
+    DecryptionError(String),
+
+    #[error("Failed to parse decrypted tag JSON: {0}")]
+    ParseError(#[from] serde_json::Error),
+}
 
 pub fn nostr_kind(kind: u16) -> Kind {
     Kind::Custom(kind)
@@ -103,19 +132,13 @@ pub fn nostr_tag_match_summary(tag: &Tag) -> Option<String> {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum NostrEventError {
-    #[error("Failed to build job result event: {0}")]
-    BuildError(#[from] nostr::event::builder::Error),
-}
-
 pub fn nostr_event_job_result(
     job_request: &Event,
     payload: impl Into<String>,
     millisats: u64,
     bolt11: Option<String>,
     tags: Option<Vec<Tag>>,
-) -> Result<EventBuilder, NostrEventError> {
+) -> Result<EventBuilder, NostrUtilsError> {
     let builder = EventBuilder::job_result(job_request.clone(), payload, millisats, bolt11)?
         .tags(tags.unwrap_or_default());
     Ok(builder)
@@ -126,7 +149,7 @@ pub fn nostr_event_job_feedback(
     error: JobRequestError,
     status: &str,
     tags: Option<Vec<Tag>>,
-) -> Result<EventBuilder, NostrEventError> {
+) -> Result<EventBuilder, NostrUtilsError> {
     let status = status
         .parse::<DataVendingMachineStatus>()
         .unwrap_or(DataVendingMachineStatus::Error);
@@ -136,38 +159,21 @@ pub fn nostr_event_job_feedback(
     Ok(builder)
 }
 
-pub async fn nostr_fetch_event_by_id(client: Client, id: &str) -> Result<Option<Event>> {
-    let event_id = EventId::from_hex(id)?;
-    let filter = Filter::new().id(event_id);
-
-    client.connect().await;
-    client.subscribe(filter, None).await?;
-
-    let mut notifications = client.notifications();
-    while let Ok(n) = notifications.recv().await {
-        if let RelayPoolNotification::Event { event, .. } = n {
-            if event.id == event_id {
-                return Ok(Some(*event));
-            }
-        }
-    }
-
-    Ok(None)
+pub async fn nostr_send_event(
+    client: Client,
+    event: EventBuilder,
+) -> Result<Output<EventId>, NostrUtilsError> {
+    Ok(client.send_event_builder(event).await?)
 }
 
-#[derive(Debug, Error)]
-pub enum NostrTagsResolveError {
-    #[error("Missing public key tag in encrypted event: {0:?}")]
-    MissingPTag(nostr::Event),
-
-    #[error("Encrypted event recipient mismatch")]
-    NotRecipient,
-
-    #[error("Decryption error: {0}")]
-    DecryptionError(String),
-
-    #[error("Failed to parse decrypted tag JSON: {0}")]
-    ParseError(#[from] serde_json::Error),
+pub async fn nostr_fetch_event_by_id(client: Client, id: &str) -> Result<Event, NostrUtilsError> {
+    let event_id = EventId::parse(id)?;
+    let filter = Filter::new().id(event_id);
+    let events = client.fetch_events(filter, Duration::from_secs(10)).await?;
+    let event = events
+        .first()
+        .ok_or_else(|| NostrUtilsError::EventNotFound(event_id.to_hex()))?;
+    Ok(event.clone())
 }
 
 pub fn nostr_tags_resolve(event: &Event, keys: &Keys) -> Result<Vec<Tag>, NostrTagsResolveError> {

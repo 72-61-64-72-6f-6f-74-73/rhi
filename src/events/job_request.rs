@@ -1,9 +1,12 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use nostr::event::{Event, EventId, Tag, TagKind};
 use nostr::filter::{Alphabet, SingleLetterTag};
 use nostr::{event::Kind, key::Keys};
 use nostr_sdk::Client;
 use nostr_sdk::RelayPoolNotification;
+use tokio::time::sleep;
 use tracing::{info, warn};
 
 use crate::KIND_JOB_REQUEST;
@@ -11,22 +14,25 @@ use crate::handlers::job_request_order::{JobRequestOrderError, handle_job_reques
 use crate::handlers::job_request_preview::handle_job_request_preview;
 use crate::handlers::job_request_quote::handle_job_request_quote;
 use crate::utils::nostr::{
-    NostrTagsResolveError, nostr_event_job_feedback, nostr_filter_kind, nostr_filter_new_events,
-    nostr_tag_at_value, nostr_tag_first_value, nostr_tag_relays_parse, nostr_tag_slice,
-    nostr_tags_resolve,
+    NostrTagsResolveError, NostrUtilsError, nostr_event_job_feedback, nostr_filter_kind,
+    nostr_filter_new_events, nostr_tag_at_value, nostr_tag_first_value, nostr_tag_relays_parse,
+    nostr_tag_slice, nostr_tags_resolve,
 };
 use crate::utils::unit::MassUnitError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum JobRequestError {
-    #[error("Order: {0}")]
-    JobRequestOrder(#[from] JobRequestOrderError),
+    #[error("{0}")]
+    NostrUtilsError(#[from] NostrUtilsError),
 
     #[error("{0}")]
     MassUnit(#[from] MassUnitError),
 
     #[error("{0}")]
     NostrTagsResolve(#[from] NostrTagsResolveError),
+
+    #[error("Order: {0}")]
+    JobRequestOrder(#[from] JobRequestOrderError),
 
     #[error("Invalid job request input type: {0}")]
     InvalidInputType(String),
@@ -303,6 +309,10 @@ async fn process_job_request<F, Fut>(
     F: FnOnce(Event, Keys, Client, JobRequest, JobRequestInput) -> Fut,
     Fut: std::future::Future<Output = Result<(), JobRequestError>>,
 {
+    if cfg!(debug_assertions) {
+        sleep(Duration::from_millis(500)).await;
+    }
+
     let error_event = event.clone();
     let error_job_req = job_req.clone();
     let error_keys = keys.clone();

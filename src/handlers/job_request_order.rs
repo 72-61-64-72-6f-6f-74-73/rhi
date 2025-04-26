@@ -1,6 +1,9 @@
 use anyhow::Result;
-use nostr::{event::Event, key::Keys};
-use nostr_sdk::Client;
+use nostr::{
+    event::{Event, Tag, TagKind},
+    key::Keys,
+};
+use nostr_sdk::{Client, client::Error as NostrClientError};
 use serde::Deserialize;
 use thiserror::Error;
 use tracing::info;
@@ -8,28 +11,28 @@ use tracing::info;
 use crate::{
     events::job_request::{JobRequest, JobRequestError, JobRequestInput},
     models::event_classified::EventClassified,
-    utils::nostr::{NostrEventError, nostr_event_job_result, nostr_fetch_event_by_id},
+    utils::nostr::{nostr_event_job_result, nostr_fetch_event_by_id, nostr_send_event},
 };
 
 #[derive(Debug, Error)]
 pub enum JobRequestOrderError {
-    #[error("Failure to parse the reference event {0}")]
-    ReferenceEventParse(String),
+    #[error("Failed to parse reference event: {0}")]
+    ParseReference(String),
 
-    #[error("Failure to fetch the reference event {0}")]
-    ReferenceEventFetch(String),
+    #[error("Failed to fetch reference event: {0}")]
+    FetchReference(String),
 
-    #[error("Reference event not found {0}")]
-    ReferenceEventMissing(String),
+    #[error("Reference event not found: {0}")]
+    MissingReference(String),
 
-    #[error("Reference event does not satisfy requested {0}")]
-    ReferenceEventMissingRequested(String),
+    #[error("Reference event does not meet request requirements: {0}")]
+    MissingRequested(String),
 
-    #[error("Failure building the job response")]
-    ResponseEventBuildFailure(#[from] NostrEventError),
+    #[error("Failed to send job response")]
+    ResponseSend(#[from] NostrClientError),
 
-    #[error("Failure sending the job response")]
-    ResponseEventSendFailure(#[from] nostr_sdk::client::Error),
+    #[error("Request cannot be satisfied: {0}")]
+    Unsatisfiable(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,51 +76,31 @@ pub async fn handle_job_request_order(
     _job_req: JobRequest,
     job_req_input: JobRequestInput,
 ) -> Result<(), JobRequestError> {
-    let order_data: JobRequestOrderData = serde_json::from_str(&job_req_input.data)?;
+    let order_data: JobRequestOrderData = serde_json::from_str(&job_req_input.data)
+        .map_err(|e| JobRequestOrderError::ParseReference(e.to_string()))?;
 
-    info!("handle_job_request_order order_data: {:?}", order_data);
-
-    let fetched_ref_event: Option<Event> =
-        nostr_fetch_event_by_id(client.clone(), &order_data.event.id.clone())
-            .await
-            .map_err(|_| JobRequestOrderError::ReferenceEventFetch(order_data.event.id.clone()))?;
-    let ref_event: &Event =
-        fetched_ref_event
-            .as_ref()
-            .ok_or(JobRequestOrderError::ReferenceEventMissing(
-                order_data.event.id.clone(),
-            ))?;
-
-    let ref_classified = EventClassified::from_event(ref_event)
-        .map_err(|_| JobRequestOrderError::ReferenceEventParse(order_data.event.id.clone()))?;
-
-    info!(
-        "handle_job_request_order ref_classified: {:?}",
-        ref_classified
-    );
-
-    if ref_classified.prices.is_empty() {
-        return Err(JobRequestError::JobRequestOrder(
-            JobRequestOrderError::ReferenceEventMissingRequested("price".to_string()),
-        ));
-    }
-
-    if ref_classified.quantities.is_empty() {
-        return Err(JobRequestError::JobRequestOrder(
-            JobRequestOrderError::ReferenceEventMissingRequested("quantity".to_string()),
-        ));
-    }
-
-    let payload = "your order was received!";
-    let event_result = nostr_event_job_result(&event_job_request.clone(), payload, 0, None, None)
-        .map_err(JobRequestOrderError::from)?;
-    let event_id = client
-        .send_event_builder(event_result)
+    let ref_id = &order_data.event.id;
+    let ref_event = nostr_fetch_event_by_id(client.clone(), ref_id)
         .await
-        .map_err(JobRequestOrderError::from)?;
+        .map_err(|_| JobRequestOrderError::FetchReference(ref_id.clone()))?;
 
-    info!("handle_job_request_order sent result {:?}", {
-        event_id.clone()
-    });
+    let ref_classified = EventClassified::from_event(&ref_event)
+        .map_err(|_| JobRequestOrderError::ParseReference(ref_id.clone()))?;
+
+    let order_result = ref_classified.calculate_order(&order_data.order)?;
+
+    let payload = serde_json::to_string(&order_result)?;
+    let tags = vec![Tag::custom(
+        TagKind::custom("e_ref"),
+        [ref_event.id.to_hex()],
+    )];
+
+    let job_result_event =
+        nostr_event_job_result(&event_job_request, payload, 0, None, Some(tags))?;
+
+    let job_result_event_id = nostr_send_event(client, job_result_event).await?;
+
+    info!("job request order result sent: {:?}", job_result_event_id);
+
     Ok(())
 }

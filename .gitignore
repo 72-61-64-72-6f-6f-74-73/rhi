@@ -3,6 +3,7 @@ justfile
 notes*.txt
 .tmp*
 .vscode
+git-diff.txt
 
 .env
 .env.*
