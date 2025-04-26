@@ -3,7 +3,7 @@ use nostr::{EventId, event::Event};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    handlers::job_request_order::{JobRequestOrderDataOrder, JobRequestOrderError},
+    handlers::job_request_order::JobRequestOrderError,
     utils::{
         nostr::{
             nostr_tag_match_geohash, nostr_tag_match_l, nostr_tag_match_location,
@@ -13,9 +13,12 @@ use crate::{
     },
 };
 
-use super::order_classified::{
-    OrderClassifiedDiscount, OrderClassifiedPrice, OrderClassifiedQuantity, OrderClassifiedResult,
-    OrderClassifiedTotal,
+use radroots_common::models::{
+    listing_order::{
+        ListingOrder, ListingOrderDiscount, ListingOrderPrice, ListingOrderQuantity,
+        ListingOrderSubtotal, ListingOrderTotal,
+    },
+    listing_order_request::ListingOrderRequestPayload,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -280,8 +283,8 @@ impl EventClassified {
 
     pub fn calculate_order(
         &self,
-        order: &JobRequestOrderDataOrder,
-    ) -> Result<OrderClassifiedResult, JobRequestOrderError> {
+        order: &ListingOrderRequestPayload,
+    ) -> Result<ListingOrder, JobRequestOrderError> {
         let quantity = &order.quantity;
         let price = &order.price;
 
@@ -331,7 +334,7 @@ impl EventClassified {
         let unit_price = tier.amount / tier.quantity_amount;
         let subtotal = (unit_price * converted_qty * 100.0).round() / 100.0;
 
-        let mut discounts: Vec<OrderClassifiedDiscount> = Vec::new();
+        let mut discounts: Vec<ListingOrderDiscount> = Vec::new();
         let package_key = format!(
             "{}-{}-{}",
             quantity.amount,
@@ -355,7 +358,7 @@ impl EventClassified {
                     } else {
                         (*value * 100.0).round() / 100.0
                     };
-                    discounts.push(OrderClassifiedDiscount {
+                    discounts.push(ListingOrderDiscount {
                         discount_type: "subtotal".into(),
                         threshold: Some(*threshold),
                         threshold_unit: None,
@@ -388,7 +391,7 @@ impl EventClassified {
                     let qty_in_dis = convert_mass(total_qty, &qty_unit, &dis_unit);
                     let amt = (qty_in_dis * discount_per_unit * 100.0).round() / 100.0;
 
-                    discounts.push(OrderClassifiedDiscount {
+                    discounts.push(ListingOrderDiscount {
                         discount_type: "mass".into(),
                         threshold: Some(*threshold),
                         threshold_unit: Some(threshold_unit.clone()),
@@ -411,7 +414,7 @@ impl EventClassified {
 
                     let amt = (*discount_per_unit * quantity.count as f64 * 100.0).round() / 100.0;
 
-                    discounts.push(OrderClassifiedDiscount {
+                    discounts.push(ListingOrderDiscount {
                         discount_type: "quantity".into(),
                         threshold: Some(*min_count as f64),
                         threshold_unit: None,
@@ -428,26 +431,26 @@ impl EventClassified {
         let total_discount: f64 = discounts.iter().map(|d| d.discount_amount).sum();
         let total = ((subtotal - total_discount) * 100.0).round() / 100.0;
 
-        Ok(OrderClassifiedResult {
-            quantity: OrderClassifiedQuantity {
+        Ok(ListingOrder {
+            quantity: ListingOrderQuantity {
                 amount: quantity.amount,
                 unit: quantity.unit.clone(),
                 label: quantity.label.clone(),
             },
-            price: OrderClassifiedPrice {
+            price: ListingOrderPrice {
                 amount: tier.amount,
                 currency: tier.currency.clone(),
                 quantity_amount: tier.quantity_amount,
                 quantity_unit: price.quantity_unit.clone(),
             },
             discounts,
-            subtotal: OrderClassifiedTotal {
+            subtotal: ListingOrderSubtotal {
                 price_amount: subtotal,
                 price_currency: tier.currency.clone(),
                 quantity_amount: total_qty,
                 quantity_unit: quantity.unit.clone(),
             },
-            total: OrderClassifiedTotal {
+            total: ListingOrderTotal {
                 price_amount: total,
                 price_currency: tier.currency.clone(),
                 quantity_amount: total_qty,

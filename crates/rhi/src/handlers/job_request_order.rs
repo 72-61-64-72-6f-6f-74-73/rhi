@@ -4,7 +4,7 @@ use nostr::{
     key::Keys,
 };
 use nostr_sdk::{Client, client::Error as NostrClientError};
-use serde::Deserialize;
+use radroots_common::models::listing_order_request::ListingOrderRequest;
 use thiserror::Error;
 use tracing::info;
 
@@ -35,40 +35,6 @@ pub enum JobRequestOrderError {
     Unsatisfiable(String),
 }
 
-#[derive(Debug, Deserialize)]
-pub struct JobRequestOrderDataQuantity {
-    pub amount: f64,
-    pub unit: String,
-    pub count: u32,
-    pub mass_g: f64,
-    pub label: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct JobRequestOrderDataPrice {
-    pub amount: f64,
-    pub currency: String,
-    pub quantity_amount: f64,
-    pub quantity_unit: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct JobRequestOrderDataOrder {
-    pub price: JobRequestOrderDataPrice,
-    pub quantity: JobRequestOrderDataQuantity,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct JobRequestOrderDataEvent {
-    pub id: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct JobRequestOrderData {
-    pub event: JobRequestOrderDataEvent,
-    pub order: JobRequestOrderDataOrder,
-}
-
 pub async fn handle_job_request_order(
     event_job_request: Event,
     _keys: Keys,
@@ -76,7 +42,7 @@ pub async fn handle_job_request_order(
     _job_req: JobRequest,
     job_req_input: JobRequestInput,
 ) -> Result<(), JobRequestError> {
-    let order_data: JobRequestOrderData = serde_json::from_str(&job_req_input.data)
+    let order_data: ListingOrderRequest = serde_json::from_str(&job_req_input.data)
         .map_err(|e| JobRequestOrderError::ParseReference(e.to_string()))?;
 
     let ref_id = &order_data.event.id;
@@ -87,7 +53,7 @@ pub async fn handle_job_request_order(
     let ref_classified = EventClassified::from_event(&ref_event)
         .map_err(|_| JobRequestOrderError::ParseReference(ref_id.clone()))?;
 
-    let order_result = ref_classified.calculate_order(&order_data.order)?;
+    let order_result = ref_classified.calculate_order(&order_data.payload)?;
 
     let payload = serde_json::to_string(&order_result)?;
     let tags = vec![Tag::custom(
