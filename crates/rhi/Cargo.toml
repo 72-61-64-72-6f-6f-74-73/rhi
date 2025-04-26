@@ -2,9 +2,9 @@
 name = "rhi"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
 license.workspace = true
-authors = ["triesap npub1tr33s4tj2le2kk9yzhfphdtss26gyn8kv7savnnjhj794nqp333q8e7grr"]
-description = "rhizome is a Nostr data vending machine (NIP-90)"
+description.workspace = true
 
 [dependencies]
 anyhow = "1.0"

@@ -5,6 +5,8 @@ members = [
 resolver = "2"
 
 [workspace.package]
-edition = "2024"
-license = "AGPLv3"
 version = "0.1.0"
+edition = "2024"
+authors = ["Radroots <info@radroots.dev>"]
+license = "AGPLv3"
+description = "rhizome is a Nostr data vending machine (NIP-90)"
